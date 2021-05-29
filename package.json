@@ -8,7 +8,6 @@
     "dev": "ganache-cli",
     "solc": "solcjs --base-path contracts --output-dir dist --abi --bin --optimize",
     "compile": "ts-node scripts/compile.ts",
-    "deploy": "ts-node scripts/deploy.ts"
   },
   "dependencies": {
     "core-js": "^3.6.5",
