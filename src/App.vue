@@ -1,27 +1,199 @@
 <template>
-  <img alt="Vue logo" src="./assets/logo.png">
-  <HelloWorld msg="Welcome to Your Vue.js + TypeScript App"/>
+  <main class="p-10">
+    <div v-if="!connected">
+      <input type="text" v-model="http" class="mr-10 border border-gray-300 p-2">
+
+      <button @click="connect" class="border border-gray-500 px-4 py-2">Connect</button>
+    </div>
+
+    <div v-if="connected" class="mb-4">
+      <h1 class="text-2xl mb-3">Accounts:</h1>
+      <div v-for="account in accounts" class="account-row p-1" @click="clickedAccount(account)" :class="{ selected: selectedAccount === account }">
+        {{ account.address }}: {{ account.eth }} eth
+      </div>
+    </div>
+
+    <section v-if="selectedAccount" class="mb-4">
+      <h1 class="text-2xl mb-3">DeSpace Apps:</h1>
+
+      <div v-for="_app in apps" class="app-row p-1" @click="clickedApp(_app)" :class="{ selected: app === _app }">{{ _app.name }} - {{ _app.address }}</div>
+
+      <div>
+        <input type="text" ref="app-name" class="mr-10 border border-gray-300 p-2" />
+        <button @click="createApp" class="border border-gray-500 px-4 py-2 mt-4">Create App</button>
+      </div>
+
+    </section>
+
+    <section v-if="app">
+      <h1 class="text-2xl mb-5">{{ app.name }} - {{ app.version }}</h1>
+
+      <div class="flex flex-col">
+        <input type="text" ref="title" class="border border-gray-300 p-2" />
+        <textarea ref="body" class="border border-gray-300 p-2" />
+        <button @click="addMessage" class="border border-gray-500 px-4 py-2 mt-4">Add Message</button>
+      </div>
+
+      <div class="flex flex-col container items-center text-center">
+        <article v-for="message in app.messages" class="w-96 my-5 py-4 border">
+          <div>{{ message.title }}</div>
+          <div>{{ message.body }}</div>
+        </article>
+      </div>
+    </section>
+  </main>
 </template>
 
-<script lang="ts">
+<script>
 import { defineComponent } from 'vue';
-import HelloWorld from './components/HelloWorld.vue';
+import Web3 from 'web3';
+import appAbiStr from '../dist/_App_sol_App.abi';
+import appBin from '../dist/_App_sol_App.bin';
+import messageAbiStr from '../dist/_Message_sol_Message.abi';
+import messageBin from '../dist/_Message_sol_Message.bin';
+
+const appAbi = JSON.parse(appAbiStr);
+const messageAbi = JSON.parse(messageAbiStr);
 
 export default defineComponent({
   name: 'App',
-  components: {
-    HelloWorld
+
+  data() {
+    return {
+      connected: false,
+      http: 'http://127.0.0.1:8545',
+      provider: null,
+      w3: null,
+      selectedAccount: null,
+      selectedApp: null,
+      app: null,
+      accounts: [],
+      messages: []
+    }
+  },
+
+  methods: {
+    async createApp() {
+      const contract = new this.w3.eth.Contract(appAbi);
+      const appName = this.$refs['app-name'].value;
+
+      const transaction = contract.deploy({
+        data: appBin ,
+        arguments: [appName, '1.0.0']
+      });
+
+      const instance = await transaction.send({
+        from: this.selectedAccount.address,
+        gas: 1500000,
+        gasPrice: '30000000000'
+      });
+
+      this.app = {
+        name: appName,
+        version: '1.0.0',
+        address: instance.options.address,
+        messages: []
+      };
+
+      this.saveApp();
+    },
+
+    clickedAccount(account) {
+      if(this.selectedAccount !== account) {
+        this.selectedAccount = account;
+        this.app = null;
+      }
+    },
+
+    async clickedApp(app) {
+      this.app = app;
+    },
+
+    connect() {
+      this.provider = new Web3.providers.HttpProvider(this.http)
+      this.w3 = new Web3(this.provider)
+
+      this.fetchAccounts()
+          .then(this.fetchBalances)
+          .then(() => this.connected = true)
+    },
+
+    fetchAccounts() {
+      return this.w3.eth.getAccounts().then((resp) => {
+        this.accounts = resp.map((address) => ({
+          address,
+          wei: null,
+          eth: null
+        }))
+      })
+    },
+
+    fetchBalances() {
+      const fetches = this.accounts.map((account) => {
+        return this.w3.eth.getBalance(account.address)
+      })
+
+      Promise.all(fetches).then((balances) => {
+        balances.forEach((balance, index) => {
+          this.accounts[index].wei = balance;
+          this.accounts[index].eth = this.w3.utils.fromWei(balance, 'ether')
+        })
+      })
+    },
+
+    async addMessage() {
+      const title = this.$refs['title'].value;
+      const body = this.$refs['body'].value;
+
+      const contract = new this.w3.eth.Contract(messageAbi);
+
+      const transaction = contract.deploy({
+        data: messageBin,
+        arguments: [title, body]
+      });
+
+      const instance = await transaction.send({
+        from: this.selectedAccount.address,
+        gas: 1500000,
+        gasPrice: '30000000000'
+      });
+
+      this.app.messages.push({ title, body, address: instance.options.address });
+      this.saveApp();
+    },
+
+    saveApp() {
+      const appStr = localStorage.getItem('apps') || '{}';
+      const apps = JSON.parse(appStr);
+
+      apps[this.selectedAccount.address] = {
+        ...apps[this.selectedAccount.address],
+        [this.app.address]: this.app
+      };
+
+      localStorage.setItem('apps', JSON.stringify(apps));
+    },
+  },
+
+  computed: {
+    apps() {
+      if(this.selectedAccount && localStorage.getItem('apps')) {
+        const apps = JSON.parse(localStorage.getItem('apps'))
+        return Object.values(apps[this.selectedAccount.address] || {});
+      }
+
+      return null
+    }
   }
 });
 </script>
 
 <style lang="scss">
-#app {
-  font-family: Avenir, Helvetica, Arial, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-align: center;
-  color: #2c3e50;
-  margin-top: 60px;
+.account-row, .app-row {
+  cursor:pointer;
+}
+
+.account-row.selected, .app-row.selected {
+  color: blue;
 }
 </style>
