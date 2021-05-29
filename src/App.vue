@@ -16,17 +16,24 @@
     <section v-if="selectedAccount" class="mb-4">
       <h1 class="text-2xl mb-3">DeSpace Apps:</h1>
 
-      <div v-for="_app in apps" class="app-row p-1" @click="clickedApp(_app)" :class="{ selected: app === _app }">{{ _app.name }} - {{ _app.address }}</div>
-
       <div>
         <input type="text" ref="app-name" class="mr-10 border border-gray-300 p-2" />
         <button @click="createApp" class="border border-gray-500 px-4 py-2 mt-4">Create App</button>
       </div>
 
+      <div class="mb-4">
+        <input type="text" ref="recover" class="mr-10 border border-gray-300 p-2" />
+        <button @click="clickedRecover" class="border border-gray-500 px-4 py-2 mt-4">Recover App</button>
+      </div>
+
+      <div v-for="_app in apps" class="app-row p-1 text-xl" @click="clickedApp(_app)" :class="{ selected: app === _app }">{{ _app.name }} - {{ _app.address }}</div>
     </section>
 
     <section v-if="app">
-      <h1 class="text-2xl mb-5">{{ app.name }} - {{ app.version }}</h1>
+      <h1 class="text-2xl mb-5">
+        {{ app.name }} - {{ app.version }}
+        <a @click="clickedDownload" class="text-sm text-blue-500 cursor-pointer">download</a>
+      </h1>
 
       <div class="flex flex-col">
         <input type="text" ref="title" class="border border-gray-300 p-2" />
@@ -98,11 +105,58 @@ export default defineComponent({
       this.saveApp();
     },
 
+    async clickedRecover() {
+      const base = this.$refs['recover'].value;
+
+      if(!base) {
+        alert('Must enter a recovery code');
+        return;
+      }
+
+      const jsonStr = atob(base);
+      const digest = JSON.parse(jsonStr);
+      const [ owner, address ] = digest[0];
+      const messageAddresses = digest[1];
+
+      if(this.selectedAccount.address !== owner) {
+        alert('That digest doesn\'t belong to you');
+        return;
+      }
+
+      const appContract = new this.w3.eth.Contract(appAbi, address);
+      const name = await appContract.methods.username().call();
+      const version = await appContract.methods.version().call();
+
+      const messages = await Promise.all(
+        messageAddresses.map(async (address) => {
+          const messageContract = new this.w3.eth.Contract(messageAbi, address);
+          const title = await messageContract.methods.title().call();
+          const body = await messageContract.methods.body().call();
+
+          return {
+            title, body, address
+          };
+        })
+      );
+
+      this.app = { name, version, address, messages };
+      this.saveApp();
+    },
+
     clickedAccount(account) {
       if(this.selectedAccount !== account) {
         this.selectedAccount = account;
         this.app = null;
       }
+    },
+
+    clickedDownload() {
+      const digest = [
+        [ this.selectedAccount.address, this.app.address ],
+        this.app.messages.map((message) => message.address)
+      ];
+
+      console.log(btoa(JSON.stringify(digest)));
     },
 
     async clickedApp(app) {
