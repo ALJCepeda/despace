@@ -7,11 +7,12 @@
     "build": "vue-cli-service build",
     "dev": "ganache-cli",
     "solc": "solcjs --base-path contracts --output-dir dist --abi --bin --optimize",
-    "compile": "ts-node scripts/compile.ts",
+    "compile": "ts-node scripts/compile.ts"
   },
   "dependencies": {
     "core-js": "^3.6.5",
     "ganache-cli": "^6.12.2",
+    "lzutf8": "^0.6.0",
     "node-gyp": "^8.0.0",
     "ts-node": "^10.0.0",
     "vue": "^3.0.0",

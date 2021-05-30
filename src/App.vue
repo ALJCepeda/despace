@@ -9,7 +9,7 @@
     <div v-if="connected" class="mb-4">
       <h1 class="text-2xl mb-3">Accounts:</h1>
       <div v-for="account in accounts" class="account-row p-1" @click="clickedAccount(account)" :class="{ selected: selectedAccount === account }">
-        {{ account.address }}: {{ account.eth }} eth
+        {{ account.address }}: {{ account.eth }}
       </div>
     </div>
 
@@ -23,16 +23,16 @@
 
       <div class="mb-4">
         <input type="text" ref="recover" class="mr-10 border border-gray-300 p-2" />
-        <button @click="clickedRecover" class="border border-gray-500 px-4 py-2 mt-4">Recover App</button>
+        <button @click="clickedRecover" class="border border-gray-500 px-4 py-2 mt-4">Recovery Address</button>
       </div>
 
-      <div v-for="_app in apps" class="app-row p-1 text-xl" @click="clickedApp(_app)" :class="{ selected: app === _app }">{{ _app.name }} - {{ _app.address }}</div>
+      <div v-for="save in saves" class="app-row p-1 text-xl" @click="clickedSave(save)" :class="{ selected: app === save.app }">{{ save.app.name }} - {{ save.backup.app }}</div>
     </section>
 
     <section v-if="app">
       <h1 class="text-2xl mb-5">
         {{ app.name }} - {{ app.version }}
-        <a @click="clickedDownload" class="text-sm text-blue-500 cursor-pointer">download</a>
+        <a @click="clickedBackup" class="text-sm text-blue-500 cursor-pointer">backup</a>
       </h1>
 
       <div class="flex flex-col">
@@ -54,13 +54,13 @@
 <script>
 import { defineComponent } from 'vue';
 import Web3 from 'web3';
-import appAbiStr from '../dist/_App_sol_App.abi';
-import appBin from '../dist/_App_sol_App.bin';
-import messageAbiStr from '../dist/_Message_sol_Message.abi';
-import messageBin from '../dist/_Message_sol_Message.bin';
-
-const appAbi = JSON.parse(appAbiStr);
-const messageAbi = JSON.parse(messageAbiStr);
+import {AppAPI} from "@/api/App";
+import {MessagesAPI} from "@/api/Messages";
+import {AccountsAPI} from "@/api/Accounts";
+import {BackupAPI} from "@/api/Backup";
+import {Backup} from "@/models/Backup";
+import {App} from "@/models/App";
+import {Message} from "@/models/Message";
 
 export default defineComponent({
   name: 'App',
@@ -74,6 +74,7 @@ export default defineComponent({
       selectedAccount: null,
       selectedApp: null,
       app: null,
+      backup: null,
       accounts: [],
       messages: []
     }
@@ -81,65 +82,35 @@ export default defineComponent({
 
   methods: {
     async createApp() {
-      const contract = new this.w3.eth.Contract(appAbi);
-      const appName = this.$refs['app-name'].value;
+      const name = this.$refs['app-name'].value;
 
-      const transaction = contract.deploy({
-        data: appBin ,
-        arguments: [appName, '1.0.0']
+      const appInstance = await AppAPI.init(this.w3, name, this.selectedAccount.address);
+      const messageInstance = await MessagesAPI.init(this.w3, this.selectedAccount.address);
+
+      this.app = new App({
+        name,
+        version: '1.0.0'
       });
 
-      const instance = await transaction.send({
-        from: this.selectedAccount.address,
-        gas: 1500000,
-        gasPrice: '30000000000'
-      });
-
-      this.app = {
-        name: appName,
-        version: '1.0.0',
-        address: instance.options.address,
-        messages: []
-      };
+      this.backup = new Backup({
+        app: appInstance.options.address,
+        messages: messageInstance.options.address
+      })
 
       this.saveApp();
     },
 
     async clickedRecover() {
-      const base = this.$refs['recover'].value;
+      const address = this.$refs['recover'].value;
 
-      if(!base) {
-        alert('Must enter a recovery code');
+      if(!address) {
+        alert('Must enter a recovery address');
         return;
       }
 
-      const jsonStr = atob(base);
-      const digest = JSON.parse(jsonStr);
-      const [ owner, address ] = digest[0];
-      const messageAddresses = digest[1];
-
-      if(this.selectedAccount.address !== owner) {
-        alert('That digest doesn\'t belong to you');
-        return;
-      }
-
-      const appContract = new this.w3.eth.Contract(appAbi, address);
-      const name = await appContract.methods.username().call();
-      const version = await appContract.methods.version().call();
-
-      const messages = await Promise.all(
-        messageAddresses.map(async (address) => {
-          const messageContract = new this.w3.eth.Contract(messageAbi, address);
-          const title = await messageContract.methods.title().call();
-          const body = await messageContract.methods.body().call();
-
-          return {
-            title, body, address
-          };
-        })
-      );
-
-      this.app = { name, version, address, messages };
+      const { app, backup } = await BackupAPI.recover(this.w3, address);
+      this.app = app;
+      this.backup = backup;
       this.saveApp();
     },
 
@@ -150,93 +121,73 @@ export default defineComponent({
       }
     },
 
-    clickedDownload() {
-      const digest = [
-        [ this.selectedAccount.address, this.app.address ],
-        this.app.messages.map((message) => message.address)
-      ];
-
-      console.log(btoa(JSON.stringify(digest)));
+    async clickedBackup() {
+      const instance = await BackupAPI.create(this.w3, this.backup, this.selectedAccount.address);
+      const message = `Backup stored at: ${instance.options.address}`;
+      alert(message);
+      console.log(message);
     },
 
-    async clickedApp(app) {
-      this.app = app;
+    async clickedSave(save) {
+      this.app = save.app;
+      this.backup = save.backup;
     },
 
     connect() {
       this.provider = new Web3.providers.HttpProvider(this.http)
       this.w3 = new Web3(this.provider)
 
-      this.fetchAccounts()
-          .then(this.fetchBalances)
-          .then(() => this.connected = true)
-    },
-
-    fetchAccounts() {
-      return this.w3.eth.getAccounts().then((resp) => {
-        this.accounts = resp.map((address) => ({
-          address,
-          wei: null,
-          eth: null
-        }))
-      })
-    },
-
-    fetchBalances() {
-      const fetches = this.accounts.map((account) => {
-        return this.w3.eth.getBalance(account.address)
-      })
-
-      Promise.all(fetches).then((balances) => {
-        balances.forEach((balance, index) => {
-          this.accounts[index].wei = balance;
-          this.accounts[index].eth = this.w3.utils.fromWei(balance, 'ether')
-        })
-      })
+      AccountsAPI.get(this.w3).then((accounts) => this.accounts = accounts)
+        .then(() =>
+          AccountsAPI.balances(this.w3, this.addresses)
+        ).then((balances) =>
+          balances.forEach((balance, index) => {
+            this.accounts[index].wei = balance;
+            this.accounts[index].eth = this.w3.utils.fromWei(balance, 'ether')
+          })
+        ).then(() => this.connected = true);
     },
 
     async addMessage() {
-      const title = this.$refs['title'].value;
-      const body = this.$refs['body'].value;
+      const message = new Message({
+        title: this.$refs['title'].value,
+        body: this.$refs['body'].value
+      })
 
-      const contract = new this.w3.eth.Contract(messageAbi);
+      await MessagesAPI.create(this.w3, message, this.backup.messages, this.selectedAccount.address);
 
-      const transaction = contract.deploy({
-        data: messageBin,
-        arguments: [title, body]
-      });
-
-      const instance = await transaction.send({
-        from: this.selectedAccount.address,
-        gas: 1500000,
-        gasPrice: '30000000000'
-      });
-
-      this.app.messages.push({ title, body, address: instance.options.address });
+      this.app.messages.push(message);
       this.saveApp();
     },
 
     saveApp() {
       const appStr = localStorage.getItem('apps') || '{}';
       const apps = JSON.parse(appStr);
+      const savesForAccount = apps[this.selectedAccount.address] || [];
 
-      apps[this.selectedAccount.address] = {
-        ...apps[this.selectedAccount.address],
-        [this.app.address]: this.app
-      };
+      apps[this.selectedAccount.address] = savesForAccount
+        .filter((save) => save.backup.app !== this.backup.app)
+        .concat({
+          app: this.app,
+          backup: this.backup
+        });
 
       localStorage.setItem('apps', JSON.stringify(apps));
     },
   },
 
   computed: {
-    apps() {
+    addresses() {
+      return this.accounts.map((account) => account.address);
+    },
+
+    saves() {
       if(this.selectedAccount && localStorage.getItem('apps')) {
         const apps = JSON.parse(localStorage.getItem('apps'))
-        return Object.values(apps[this.selectedAccount.address] || {});
+        return Object.values(apps[this.selectedAccount.address] || []);
       }
 
-      return null
+      return [];
     }
   }
 });

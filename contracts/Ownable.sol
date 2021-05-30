@@ -8,12 +8,12 @@ contract Ownable {
         owner = msg.sender;
     }
 
-    function isOwner() public view {
-        require(msg.sender == owner, "Must be owner to call");
+    modifier OnlyOwner {
+        require(msg.sender == owner, 'Must be owner to call');
+        _;
     }
 
-    function transfer(address newOwner) public {
-        isOwner();
+    function transfer(address newOwner) public OnlyOwner {
         owner = newOwner;
     }
 }
