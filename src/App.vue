@@ -74,7 +74,6 @@ export default defineComponent({
       selectedAccount: null,
       selectedApp: null,
       app: null,
-      backup: null,
       accounts: [],
       messages: []
     }
@@ -83,19 +82,18 @@ export default defineComponent({
   methods: {
     async createApp() {
       const name = this.$refs['app-name'].value;
-
-      const appInstance = await AppAPI.init(this.w3, name, this.selectedAccount.address);
-      const messageInstance = await MessagesAPI.init(this.w3, this.selectedAccount.address);
-
       this.app = new App({
         name,
         version: '1.0.0'
       });
 
+      const appInstance = await AppAPI.init(this.w3, this.app, this.selectedAccount.address);
+      const messageInstance = await MessagesAPI.init(this.w3, this.selectedAccount.address);
+
       this.backup = new Backup({
         app: appInstance.options.address,
         messages: messageInstance.options.address
-      })
+      });
 
       this.saveApp();
     },
@@ -122,7 +120,9 @@ export default defineComponent({
     },
 
     async clickedBackup() {
-      const instance = await BackupAPI.create(this.w3, this.backup, this.selectedAccount.address);
+      const backup =
+
+      const instance = await BackupAPI.create(this.w3, backup, this.selectedAccount.address);
       const message = `Backup stored at: ${instance.options.address}`;
       alert(message);
       console.log(message);
@@ -138,9 +138,8 @@ export default defineComponent({
       this.w3 = new Web3(this.provider)
 
       AccountsAPI.get(this.w3).then((accounts) => this.accounts = accounts)
-        .then(() =>
-          AccountsAPI.balances(this.w3, this.addresses)
-        ).then((balances) =>
+        .then(() => AccountsAPI.balances(this.w3, this.addresses))
+        .then((balances) =>
           balances.forEach((balance, index) => {
             this.accounts[index].wei = balance;
             this.accounts[index].eth = this.w3.utils.fromWei(balance, 'ether')

@@ -8,22 +8,23 @@ import "./Ownable.sol";
   }
 
 contract App is Ownable {
-  AppInfo private info;
+  AppInfo public info;
+  address[] public features;
 
-  constructor(string memory _name, string memory _version) {
-    info.name = _name;
-    info.version = _version;
+  constructor(AppInfo memory _info, address[] memory _features) {
+    info = _info;
+    features = _features;
   }
 
-  function get() public view returns (AppInfo memory) {
-    return info;
+  function updateInfo(AppInfo memory _info) OnlyOwner external {
+    info = _info;
   }
 
-  function name(string calldata _name) public OnlyOwner {
-    info.name = _name;
+  function setFeatures(address[] memory _features) OnlyOwner external {
+    features = _features;
   }
 
-  function version(string calldata _version) public OnlyOwner {
-    info.version = _version;
+  function addFeature(address _feature) OnlyOwner external {
+    features.push(_feature);
   }
 }

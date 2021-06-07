@@ -8,12 +8,12 @@ import {App} from "@/models/App";
 const appAbi = JSON.parse(appAbiStr);
 
 export const AppAPI = {
-  async init(w3:Web3, name:string, from:string) {
+  async init(w3:Web3, app:App, from:string) {
     const contract = new w3.eth.Contract(appAbi);
 
     const transaction = contract.deploy({
       data: appBin ,
-      arguments: [name, '1.0.0']
+      arguments: [app.name, app.version]
     });
 
     return transaction.send({
